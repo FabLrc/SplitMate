@@ -10,6 +10,7 @@ const addExpenseSchema = z.object({
   splitRatio: z.number().min(0).max(1).nullable().optional(),
   date: z.string().datetime().optional(),
   toDiscuss: z.boolean().optional(),
+  isShared: z.boolean().optional(),
 });
 
 export async function POST(
@@ -49,6 +50,7 @@ export async function POST(
           sessionId: id,
           addedById: userId,
           toDiscuss: data.toDiscuss ?? false,
+          isShared: data.isShared ?? true,
         },
         include: {
           addedBy: { select: { id: true, name: true, image: true } },

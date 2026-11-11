@@ -10,6 +10,7 @@ const updateExpenseSchema = z.object({
   splitRatio: z.number().min(0).max(1).nullable().optional(),
   date: z.string().datetime().optional(),
   toDiscuss: z.boolean().optional(),
+  isShared: z.boolean().optional(),
 });
 
 type Params = { params: Promise<{ id: string; expenseId: string }> };

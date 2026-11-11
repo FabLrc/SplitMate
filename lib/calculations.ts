@@ -29,7 +29,10 @@ export function calculateSessionSummary(
 ): SessionSummary | null {
   if (!session.invitee) return null;
 
-  const breakdown: ExpenseBreakdown[] = session.expenses.map((expense) => {
+  // Private expenses are personal and never count toward the shared balance.
+  const sharedExpenses = session.expenses.filter((expense) => expense.isShared);
+
+  const breakdown: ExpenseBreakdown[] = sharedExpenses.map((expense) => {
     const effectiveSplitRatio =
       expense.splitRatio ?? session.defaultSplitRatio;
     const creatorShare = expense.amount * effectiveSplitRatio;
@@ -37,11 +40,11 @@ export function calculateSessionSummary(
     return { expense, creatorShare, inviteeShare, effectiveSplitRatio };
   });
 
-  const creatorPaid = session.expenses
+  const creatorPaid = sharedExpenses
     .filter((e) => e.addedById === session.creatorId)
     .reduce((sum, e) => sum + e.amount, 0);
 
-  const inviteePaid = session.expenses
+  const inviteePaid = sharedExpenses
     .filter((e) => e.addedById === session.inviteeId)
     .reduce((sum, e) => sum + e.amount, 0);
 
