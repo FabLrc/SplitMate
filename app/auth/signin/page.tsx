@@ -13,9 +13,12 @@ const AUTH_ERRORS: Record<string, string> = {
   DiscordEmailUnverified:
     "Votre compte Discord n'a pas d'email vérifié. Vérifiez votre email dans les paramètres Discord puis réessayez.",
   OAuthAccountNotLinked:
-    "Un compte existe déjà avec cet email via une autre méthode de connexion.",
+    "Un compte existe déjà avec cet email. Connectez-vous avec votre méthode habituelle, puis liez Discord depuis le tableau de bord.",
+  OAuthCallbackError:
+    "Discord a refusé la connexion. Vérifiez l'URI de redirection Discord et réessayez.",
   AccessDenied: "Connexion refusée.",
-  Configuration: "Erreur de configuration du serveur d'authentification.",
+  Configuration:
+    "Erreur de configuration du serveur d'authentification. Vérifiez DISCORD_CLIENT_ID et DISCORD_CLIENT_SECRET.",
 };
 
 function SignInForm() {

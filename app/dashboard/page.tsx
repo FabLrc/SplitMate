@@ -9,6 +9,7 @@ import { formatCurrency } from "@/lib/calculations";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { SessionActions } from "./session-actions";
 import { DashboardRefresh } from "./dashboard-refresh";
+import { LinkDiscordButton } from "@/components/link-discord-button";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export default async function DashboardPage({
 
   const userId = session.user.id;
 
-  const [sessions, totalCount] = await Promise.all([
+  const [sessions, totalCount, discordAccount] = await Promise.all([
     prisma.expenseSession.findMany({
       where: { OR: [{ creatorId: userId }, { inviteeId: userId }] },
       include: {
@@ -43,9 +44,14 @@ export default async function DashboardPage({
     prisma.expenseSession.count({
       where: { OR: [{ creatorId: userId }, { inviteeId: userId }] },
     }),
+    prisma.account.findFirst({
+      where: { userId, provider: "discord" },
+      select: { provider: true },
+    }),
   ]);
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+  const discordLinked = discordAccount !== null;
 
   return (
     <div className="min-h-screen dark:bg-zinc-900">
@@ -189,6 +195,26 @@ export default async function DashboardPage({
             )}
           </>
         )}
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Connexion Discord</CardTitle>
+            <CardDescription>
+              {discordLinked
+                ? "Votre compte Discord est lié à SplitMate."
+                : "Connectez-vous avec votre méthode habituelle, puis liez votre compte Discord une fois."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {discordLinked ? (
+              <span className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-full font-medium bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300">
+                Discord lié
+              </span>
+            ) : (
+              <LinkDiscordButton />
+            )}
+          </CardContent>
+        </Card>
       </main>
     </div>
   );
