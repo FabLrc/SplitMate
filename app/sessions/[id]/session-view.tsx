@@ -128,7 +128,9 @@ export function SessionView({
   }, [initialSession.id]);
 
   useEffect(() => {
-    refreshSession();
+    // The first refresh goes through a timer so it does not set state during
+    // the commit phase; it still fires well before the first 3s interval tick.
+    const initialRefresh = setTimeout(refreshSession, 0);
     const interval = setInterval(refreshSession, 3_000);
     const onFocus = () => refreshSession();
     const onVisible = () => {
@@ -137,6 +139,7 @@ export function SessionView({
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
+      clearTimeout(initialRefresh);
       clearInterval(interval);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisible);

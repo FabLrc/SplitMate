@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 
 function urlBase64ToArrayBuffer(base64String: string): ArrayBuffer {
@@ -15,30 +15,22 @@ function urlBase64ToArrayBuffer(base64String: string): ArrayBuffer {
 
 type State = "loading" | "prompt" | "subscribed" | "denied" | "unsupported" | "dismissed";
 
-export function NotificationPrompt() {
-  const [state, setState] = useState<State>("loading");
+// Permission, capability and dismissal are external state: read them with
+// useSyncExternalStore instead of copying them into React state from an effect.
+function detect(): State | "granted" {
+  if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window))
+    return "unsupported";
+  if (Notification.permission === "denied") return "denied";
+  if (Notification.permission === "granted") return "granted";
+  if (sessionStorage.getItem("push-dismissed")) return "dismissed";
+  return "prompt";
+}
 
-  useEffect(() => {
-    if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
-      setState("unsupported");
-      return;
-    }
-    if (Notification.permission === "denied") {
-      setState("denied");
-      return;
-    }
-    if (Notification.permission === "granted") {
-      // Already granted — silently subscribe (handles new devices)
-      subscribe().then(() => setState("subscribed"));
-      return;
-    }
-    // Check if user already dismissed this session
-    if (sessionStorage.getItem("push-dismissed")) {
-      setState("dismissed");
-      return;
-    }
-    setState("prompt");
-  }, []);
+const subscribeToNothing = () => () => {};
+
+export function NotificationPrompt() {
+  const detected = useSyncExternalStore(subscribeToNothing, detect, () => "loading" as const);
+  const [state, setState] = useState<State | null>(null);
 
   const subscribe = useCallback(async () => {
     const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
@@ -65,6 +57,12 @@ export function NotificationPrompt() {
     });
   }, []);
 
+  useEffect(() => {
+    // Already granted — silently subscribe (handles new devices)
+    if (detected !== "granted") return;
+    subscribe().then(() => setState("subscribed"));
+  }, [detected, subscribe]);
+
   async function handleEnable() {
     const permission = await Notification.requestPermission();
     if (permission === "granted") {
@@ -80,7 +78,9 @@ export function NotificationPrompt() {
     setState("dismissed");
   }
 
-  if (state !== "prompt") return null;
+  const current = state ?? (detected === "granted" ? "loading" : detected);
+
+  if (current !== "prompt") return null;
 
   return (
     <div className="fixed bottom-4 left-4 right-4 max-w-sm mx-auto z-50 animate-in slide-in-from-bottom-4 fade-in duration-300">

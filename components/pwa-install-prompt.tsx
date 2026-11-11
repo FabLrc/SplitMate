@@ -7,10 +7,11 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 };
 
+type Prompt = "install" | "ios";
+
 export function PwaInstallPrompt() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [visible, setVisible] = useState(false);
-  const [isIos, setIsIos] = useState(false);
+  const [prompt, setPrompt] = useState<Prompt | null>(null);
 
   useEffect(() => {
     // Already running as installed PWA — hide
@@ -20,19 +21,19 @@ export function PwaInstallPrompt() {
     )
       return;
 
-    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    setIsIos(ios);
+    // Don't re-show if dismissed this session
+    if (sessionStorage.getItem("pwa-prompt-dismissed")) return;
 
-    if (ios) {
+    if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
       // Show iOS instructions after a short delay
-      const t = setTimeout(() => setVisible(true), 3000);
+      const t = setTimeout(() => setPrompt("ios"), 3000);
       return () => clearTimeout(t);
     }
 
     const handler = (e: Event) => {
       e.preventDefault();
       setInstallPrompt(e as BeforeInstallPromptEvent);
-      setVisible(true);
+      setPrompt("install");
     };
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);
@@ -42,22 +43,18 @@ export function PwaInstallPrompt() {
     if (!installPrompt) return;
     await installPrompt.prompt();
     const { outcome } = await installPrompt.userChoice;
-    if (outcome === "accepted") setVisible(false);
+    if (outcome === "accepted") setPrompt(null);
     setInstallPrompt(null);
   }
 
   function dismiss() {
-    setVisible(false);
+    setPrompt(null);
     // Don't show again this session
     sessionStorage.setItem("pwa-prompt-dismissed", "1");
   }
 
-  // Don't re-show if dismissed this session
-  useEffect(() => {
-    if (sessionStorage.getItem("pwa-prompt-dismissed")) setVisible(false);
-  }, []);
-
-  if (!visible) return null;
+  if (!prompt) return null;
+  const isIos = prompt === "ios";
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 safe-bottom">
