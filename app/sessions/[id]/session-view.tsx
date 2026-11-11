@@ -114,11 +114,21 @@ export function SessionView({
   // back, so the data is fresh the moment the tab is visible again.
   const refreshing = useRef(false);
   const mutationEpoch = useRef(0);
+  const mutationsInFlight = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Any local mutation bumps the epoch twice (start + end). A poll response is
-  // only applied when the epoch is unchanged since the request started, so a
-  // response captured before a mutation cannot overwrite optimistic state.
+  function beginMutation() {
+    mutationsInFlight.current += 1;
+    mutationEpoch.current += 1;
+  }
+
+  function endMutation() {
+    mutationsInFlight.current = Math.max(0, mutationsInFlight.current - 1);
+    mutationEpoch.current += 1;
+  }
+
+  // A poll response is only applied when no mutation is in flight and no
+  // mutation started or finished since the request began.
 
   const refreshSession = useCallback(async () => {
     if (refreshing.current || document.hidden) return;
@@ -137,9 +147,10 @@ export function SessionView({
       }
       if (!res.ok) return;
       const data = await res.json();
-      // Epoch increments by two per mutation (start + end), so an odd epoch
-      // means a mutation is still in flight; never apply a response then.
-      if (mutationEpoch.current === requestEpoch && requestEpoch % 2 === 0) {
+      if (
+        mutationsInFlight.current === 0 &&
+        mutationEpoch.current === requestEpoch
+      ) {
         setSession(data);
       }
     } catch {
@@ -278,7 +289,7 @@ export function SessionView({
     e.preventDefault();
     setFormLoading(true);
     setFormError("");
-    mutationEpoch.current += 1;
+    beginMutation();
 
     try {
       const res = await fetch(`/api/sessions/${session.id}/expenses`, {
@@ -315,12 +326,12 @@ export function SessionView({
       titleRef.current?.focus();
     } finally {
       setFormLoading(false);
-      mutationEpoch.current += 1;
+      endMutation();
     }
   }
 
   async function deleteExpense(expenseId: string) {
-    mutationEpoch.current += 1;
+    beginMutation();
     setDeletingId(expenseId);
     setDeleteError("");
     try {
@@ -340,7 +351,7 @@ export function SessionView({
       setDeleteError("Connexion impossible. La dépense n'a pas été supprimée.");
     } finally {
       setDeletingId(null);
-      mutationEpoch.current += 1;
+      endMutation();
     }
   }
 
@@ -363,7 +374,7 @@ export function SessionView({
     e.preventDefault();
     setEditLoading(true);
     setEditError("");
-    mutationEpoch.current += 1;
+    beginMutation();
 
     try {
       const res = await fetch(`/api/sessions/${session.id}/expenses/${expenseId}`, {
@@ -395,12 +406,12 @@ export function SessionView({
       setEditingId(null);
     } finally {
       setEditLoading(false);
-      mutationEpoch.current += 1;
+      endMutation();
     }
   }
 
   async function closeSession() {
-    mutationEpoch.current += 1;
+    beginMutation();
     setClosingSession(true);
     try {
       const res = await fetch(`/api/sessions/${session.id}`, {
@@ -414,7 +425,7 @@ export function SessionView({
     } finally {
       setClosingSession(false);
       setConfirmClose(false);
-      mutationEpoch.current += 1;
+      endMutation();
     }
   }
 
@@ -447,7 +458,7 @@ export function SessionView({
     }
     // Convert "my share" percentage to creator's ratio
     const creatorRatio = isCreator ? pct / 100 : (100 - pct) / 100;
-    mutationEpoch.current += 1;
+    beginMutation();
     try {
       const res = await fetch(`/api/sessions/${session.id}`, {
         method: "PUT",
@@ -465,12 +476,12 @@ export function SessionView({
       setSplitConfirm(false);
     } finally {
       setSplitSaving(false);
-      mutationEpoch.current += 1;
+      endMutation();
     }
   }
 
   async function settleBalance(amount: number, splitRatio: number) {
-    mutationEpoch.current += 1;
+    beginMutation();
     setSettling(true);
     try {
       const res = await fetch(`/api/sessions/${session.id}/expenses`, {
@@ -490,14 +501,14 @@ export function SessionView({
       }
     } finally {
       setSettling(false);
-      mutationEpoch.current += 1;
+      endMutation();
     }
   }
 
   async function toggleDiscuss(expense: ExpenseWithAdder) {
     const next = !expense.toDiscuss;
     const previous = expense.toDiscuss;
-    mutationEpoch.current += 1;
+    beginMutation();
     setSession((prev) => ({
       ...prev,
       expenses: prev.expenses.map((e) =>
@@ -537,7 +548,7 @@ export function SessionView({
         ),
       }));
     } finally {
-      mutationEpoch.current += 1;
+      endMutation();
     }
   }
 

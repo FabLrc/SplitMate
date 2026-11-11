@@ -275,7 +275,7 @@ export function NewSessionForm({
           </div>
 
           <div className="flex gap-3 pt-2">
-            <Button asChild type="button" variant="outline" className="flex-1">
+            <Button asChild variant="outline" className="flex-1">
               <Link href="/dashboard">Annuler</Link>
             </Button>
             <Button type="submit" className="flex-1" disabled={loading}>
