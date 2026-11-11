@@ -5,10 +5,11 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { format, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
-import { CalendarIcon, Search, X } from "lucide-react";
+import { CalendarIcon, FileUp, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { ExpenseLabelInput } from "@/components/expense-label-input";
+import { ImportStatementDialog } from "@/components/import-statement-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -148,12 +149,14 @@ export function SessionView({
 
   // Add expense
   const [showForm, setShowForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [formData, setFormData] = useState({
     label: "",
     amount: "",
     splitRatio: "",
     date: new Date().toISOString().split("T")[0],
     toDiscuss: false,
+    isShared: true,
   });
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState("");
@@ -173,12 +176,14 @@ export function SessionView({
     splitRatio: string;
     date: string;
     toDiscuss: boolean;
+    isShared: boolean;
   }>({
     label: "",
     amount: "",
     splitRatio: "",
     date: "",
     toDiscuss: false,
+    isShared: true,
   });
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState("");
@@ -247,6 +252,7 @@ export function SessionView({
           : null,
         date: formData.date ? new Date(formData.date).toISOString() : undefined,
         toDiscuss: formData.toDiscuss,
+        isShared: formData.isShared,
       }),
     });
 
@@ -265,6 +271,7 @@ export function SessionView({
       splitRatio: "",
       date: new Date().toISOString().split("T")[0],
       toDiscuss: false,
+      isShared: true,
     });
     setFormLoading(false);
     titleRef.current?.focus();
@@ -295,6 +302,7 @@ export function SessionView({
         : "",
       date: new Date(expense.date).toISOString().split("T")[0],
       toDiscuss: expense.toDiscuss,
+      isShared: expense.isShared,
     });
   }
 
@@ -314,6 +322,7 @@ export function SessionView({
           : null,
         date: editForm.date ? new Date(editForm.date).toISOString() : undefined,
         toDiscuss: editForm.toDiscuss,
+        isShared: editForm.isShared,
       }),
     });
 
@@ -670,9 +679,18 @@ export function SessionView({
             {session.status === "OPEN" && (
               <>
                 {!showForm ? (
-                  <Button onClick={() => setShowForm(true)} className="w-full">
-                    + Ajouter une dépense
-                  </Button>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <Button onClick={() => setShowForm(true)}>
+                      + Ajouter une dépense
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowImport(true)}
+                    >
+                      <FileUp className="h-4 w-4" />
+                      Importer un relevé
+                    </Button>
+                  </div>
                 ) : (
                   <Card>
                     <CardHeader className="pb-3">
@@ -748,6 +766,15 @@ export function SessionView({
                             />
                             <span>À discuter avec l&apos;autre personne</span>
                           </label>
+                          <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 rounded border-zinc-300 text-amber-500 focus:ring-amber-400"
+                              checked={formData.isShared}
+                              onChange={(e) => setFormData({ ...formData, isShared: e.target.checked })}
+                            />
+                            <span>Dépense partagée (comptée dans le solde)</span>
+                          </label>
                         </div>
                         <div className="flex gap-2 pt-1">
                           <Button type="button" variant="outline" className="flex-1" onClick={() => setShowForm(false)}>
@@ -761,6 +788,13 @@ export function SessionView({
                     </CardContent>
                   </Card>
                 )}
+                <ImportStatementDialog
+                  sessionId={session.id}
+                  currency={currency}
+                  open={showImport}
+                  onOpenChange={setShowImport}
+                  onImported={refreshSession}
+                />
               </>
             )}
 
@@ -959,6 +993,7 @@ function ExpenseList({
     splitRatio: string;
     date: string;
     toDiscuss: boolean;
+    isShared: boolean;
   };
   editLoading: boolean;
   editError: string;
@@ -1047,6 +1082,15 @@ function ExpenseList({
                         />
                         <span>À discuter avec l&apos;autre personne</span>
                       </label>
+                      <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-zinc-300 text-amber-500 focus:ring-amber-400"
+                          checked={editForm.isShared}
+                          onChange={(e) => onEditChange("isShared", e.target.checked)}
+                        />
+                        <span>Dépense partagée (comptée dans le solde)</span>
+                      </label>
                     </div>
                     <div className="flex gap-2 pt-1">
                       <Button type="button" variant="outline" size="sm" className="flex-1" onClick={onEditCancel}>
@@ -1072,7 +1116,14 @@ function ExpenseList({
               }`}
             >
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{expense.label}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-medium truncate">{expense.label}</p>
+                  {!expense.isShared && (
+                    <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-500 dark:bg-zinc-700 dark:text-zinc-300">
+                      Privée
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-zinc-400 dark:text-zinc-400 mt-0.5">
                   {new Date(expense.date).toLocaleDateString("fr-FR")}
                   {expense.splitRatio !== null && (
@@ -1174,12 +1225,24 @@ function SummaryView({
     );
   }
 
-  if (session.expenses.length === 0) {
+  const sharedExpenses = session.expenses.filter((expense) => expense.isShared);
+  const privateCount = session.expenses.length - sharedExpenses.length;
+  const privateNote = `${privateCount} dépense${
+    privateCount > 1 ? "s" : ""
+  } privée${privateCount > 1 ? "s" : ""} exclue${
+    privateCount > 1 ? "s" : ""
+  } du solde`;
+
+  if (sharedExpenses.length === 0) {
     return (
       <Card className="text-center py-10">
         <CardContent>
           <div className="text-3xl mb-3">📊</div>
-          <CardDescription>Ajoutez des dépenses pour voir le résumé.</CardDescription>
+          <CardDescription>
+            {privateCount > 0
+              ? `Aucune dépense partagée. ${privateNote}.`
+              : "Ajoutez des dépenses pour voir le résumé."}
+          </CardDescription>
         </CardContent>
       </Card>
     );
@@ -1194,7 +1257,7 @@ function SummaryView({
   let creatorShouldPay = 0;
   let inviteeShouldPay = 0;
 
-  for (const expense of session.expenses) {
+  for (const expense of sharedExpenses) {
     const ratio = expense.splitRatio ?? session.defaultSplitRatio;
     creatorShouldPay += expense.amount * ratio;
     inviteeShouldPay += expense.amount * (1 - ratio);
@@ -1213,7 +1276,7 @@ function SummaryView({
   const settled = Math.abs(balance) < 0.005;
   const currentUserOwes = currentUserBalance < -0.005;
 
-  const filteredExpenses = [...session.expenses]
+  const filteredExpenses = [...sharedExpenses]
     .filter((e) => {
       if (filter === "mine") return e.addedById === currentUserId;
       if (filter === "partner") return e.addedById !== currentUserId;
@@ -1305,6 +1368,11 @@ function SummaryView({
         <CardContent>
           <div className="space-y-2">
             <Row label="Total" value={formatCurrency(total)} bold />
+            {privateCount > 0 && (
+              <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                {privateNote}
+              </p>
+            )}
             <div className="border-t border-zinc-100 dark:border-zinc-700 my-1" />
             {/* Current user rows */}
             <div className="rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900 px-3 py-2 space-y-1.5">

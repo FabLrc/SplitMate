@@ -155,6 +155,7 @@ model Expense {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   toDiscuss  Boolean  @default(false)
+  isShared   Boolean  @default(true)
 
   sessionId String
   session   ExpenseSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)

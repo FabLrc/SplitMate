@@ -132,3 +132,23 @@ Pour chaque dépense, un `splitRatio` (0–1) définit la **part du créateur de
 - Si non défini sur la dépense → utilise le `defaultSplitRatio` de la session
 
 **Balance finale** = ce que j'ai payé − ce que je devais payer = montant dû par l'autre (négatif = je dois).
+
+## Import de relevé bancaire
+
+Depuis une session ouverte, le bouton **Importer un relevé** accepte un fichier PDF, CSV ou TXT (4 Mo maximum, pas d'OCR). L'IA extrait les débits, ignore les crédits, soldes et totaux, puis pré-classe chaque transaction en dépense **partagée** ou **privée** à partir de l'intitulé et des 10 sessions passées les plus récentes de l'utilisateur (30 dépenses par session).
+
+L'écran de prévisualisation reste une suggestion : chaque ligne peut être incluse ou non, éditée (libellé, montant, date) et basculée entre partagée et privée. Les doublons probables (même libellé normalisé, même montant à ±0,01 et même date) sont décochés par défaut. Rien n'est enregistré avant la confirmation.
+
+Les dépenses privées restent visibles dans la liste mais sont exclues du solde et du résumé.
+
+### Configuration
+
+| Variable | Description |
+|---|---|
+| `OPENCODE_API_KEY` | Clé API OpenCode (obligatoire — sans elle l'import renvoie une erreur 503) |
+| `OPENCODE_API_BASE_URL` | Base OpenAI-compatible (défaut : `https://opencode.ai/inference/openai/v1`) |
+| `OPENCODE_MODEL` | Modèle d'extraction (défaut : `deepseek-v4.1-flash`) |
+
+### Données envoyées à l'IA
+
+Seul le texte du relevé est transmis à l'API OpenCode, tronqué à environ 60 000 caractères, accompagné du titre, de la devise et de la répartition de la session courante ainsi que de l'historique de classification (libellés, montants, caractère partagé/privé). Les noms des participants et le contenu du relevé ne sont jamais journalisés. Le texte est traité comme une donnée non fiable pour limiter les injections de prompt.
