@@ -1,9 +1,16 @@
 import type { Metadata, Viewport } from "next";
+import { Geist } from "next/font/google";
 import "./globals.css";
 import { Analytics } from "@vercel/analytics/react";
 import { PwaInstallPrompt } from "@/components/pwa-install-prompt";
 import { NavigationProgress } from "@/components/navigation-progress";
 import { NotificationPrompt } from "@/components/notification-prompt";
+
+const geist = Geist({
+  subsets: ["latin"],
+  variable: "--font-geist-sans",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "SplitMate — Dépenses partagées",
@@ -31,7 +38,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fr" className="h-full">
+    <html lang="fr" className={`h-full ${geist.variable}`}>
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -44,7 +51,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="min-h-full flex flex-col antialiased bg-zinc-50 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">
+      <body className="min-h-full flex flex-col antialiased font-sans bg-zinc-50 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">
         <NavigationProgress />
         {children}
         <Analytics />

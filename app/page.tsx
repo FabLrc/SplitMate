@@ -17,16 +17,12 @@ export default async function HomePage() {
           partenaire, et voyez instantanément qui doit quoi à qui.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
-          <Link href="/auth/signin">
-            <Button size="lg" className="w-full sm:w-auto">
-              Se connecter
-            </Button>
-          </Link>
-          <Link href="/auth/register">
-            <Button size="lg" variant="outline" className="w-full sm:w-auto">
-              Créer un compte
-            </Button>
-          </Link>
+          <Button asChild size="lg" className="w-full sm:w-auto">
+            <Link href="/auth/signin">Se connecter</Link>
+          </Button>
+          <Button asChild size="lg" variant="outline" className="w-full sm:w-auto">
+            <Link href="/auth/register">Créer un compte</Link>
+          </Button>
         </div>
       </div>
     </main>

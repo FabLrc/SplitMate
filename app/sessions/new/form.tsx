@@ -275,11 +275,9 @@ export function NewSessionForm({
           </div>
 
           <div className="flex gap-3 pt-2">
-            <Link href="/dashboard" className="flex-1">
-              <Button type="button" variant="outline" className="w-full">
-                Annuler
-              </Button>
-            </Link>
+            <Button asChild type="button" variant="outline" className="flex-1">
+              <Link href="/dashboard">Annuler</Link>
+            </Button>
             <Button type="submit" className="flex-1" disabled={loading}>
               {loading ? "Création…" : "Créer la session"}
             </Button>

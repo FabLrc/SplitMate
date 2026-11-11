@@ -100,7 +100,10 @@ export async function POST(req: NextRequest) {
     revalidatePath("/dashboard");
 
     if (data.inviteeId) {
-      const url = `${(process.env.NEXTAUTH_URL ?? "").replace(/\/$/, "")}/sessions/${expenseSession.id}`;
+      const origin =
+        process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ??
+        req.nextUrl.origin;
+      const url = new URL(`/sessions/${expenseSession.id}`, origin).toString();
       sendPushToUser(data.inviteeId, {
         title: "Nouvelle session",
         body: `${session.user.name ?? "Quelqu'un"} vous a ajouté à "${data.title}".`,
