@@ -85,7 +85,10 @@ export async function POST(
         { status: 400 }
       );
     }
-    console.error(error);
+    console.error(
+      "bulk expenses: unexpected failure",
+      error instanceof Error ? error.name : "unknown error"
+    );
     return NextResponse.json({ error: "Erreur serveur." }, { status: 500 });
   }
 }

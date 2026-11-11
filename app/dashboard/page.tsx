@@ -34,7 +34,7 @@ export default async function DashboardPage({
       include: {
         creator: { select: { id: true, name: true } },
         invitee: { select: { id: true, name: true } },
-        expenses: { select: { id: true, amount: true } },
+        expenses: { select: { id: true, amount: true, isShared: true } },
         household: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: "desc" },
@@ -116,7 +116,12 @@ export default async function DashboardPage({
           <>
             <div className="space-y-3">
               {sessions.map((s) => {
-                const totalAmount = s.expenses.reduce((sum, e) => sum + e.amount, 0);
+                const sharedExpenses = s.expenses.filter((e) => e.isShared);
+                const privateCount = s.expenses.length - sharedExpenses.length;
+                const totalAmount = sharedExpenses.reduce(
+                  (sum, e) => sum + e.amount,
+                  0
+                );
                 const isCreator = s.creatorId === userId;
                 const partner = isCreator ? s.invitee : s.creator;
 
@@ -156,7 +161,11 @@ export default async function DashboardPage({
                       <CardContent className="pt-0">
                         <div className="flex items-center justify-between text-sm text-zinc-500 dark:text-zinc-400">
                           <span>
-                            {s.expenses.length} dépense{s.expenses.length > 1 ? "s" : ""}
+                            {sharedExpenses.length} partagée
+                            {sharedExpenses.length > 1 ? "s" : ""}
+                            {privateCount > 0
+                              ? ` · ${privateCount} privée${privateCount > 1 ? "s" : ""}`
+                              : ""}
                           </span>
                           <span className="font-medium text-zinc-900 dark:text-zinc-100">
                             {formatCurrency(totalAmount, s.currency)}

@@ -231,7 +231,7 @@ export function ImportStatementDialog({
             label: row.label.trim(),
             amount: Number.parseFloat(row.amount),
             date: row.date
-              ? new Date(`${row.date}T00:00:00`).toISOString()
+              ? new Date(`${row.date}T00:00:00.000Z`).toISOString()
               : undefined,
             isShared: row.isShared,
           })),

@@ -1015,9 +1015,11 @@ function ExpenseList({
       <div className="space-y-2">
         {expenses.map((expense) => {
           const ratio = expense.splitRatio ?? defaultSplitRatio;
-          const myShare = isCreator
-            ? expense.amount * ratio
-            : expense.amount * (1 - ratio);
+          const myShare = expense.isShared
+            ? isCreator
+              ? expense.amount * ratio
+              : expense.amount * (1 - ratio)
+            : expense.amount;
           const isEditing = editingId === expense.id;
           const isOwn = expense.addedById === currentUserId;
 
@@ -1126,7 +1128,7 @@ function ExpenseList({
                 </div>
                 <p className="text-xs text-zinc-400 dark:text-zinc-400 mt-0.5">
                   {new Date(expense.date).toLocaleDateString("fr-FR")}
-                  {expense.splitRatio !== null && (
+                  {expense.isShared && expense.splitRatio !== null && (
                     <span className="ml-2">
                       • ma part {Math.round(myShare / expense.amount * 100)}%
                     </span>

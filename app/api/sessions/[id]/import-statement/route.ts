@@ -194,7 +194,7 @@ export async function POST(
     // Never log statement content or the extracted text.
     console.error(
       "import-statement: unexpected failure",
-      error instanceof Error ? error.message : "unknown error"
+      error instanceof Error ? error.name : "unknown error"
     );
     return NextResponse.json(
       { error: "Erreur serveur." },
