@@ -62,11 +62,9 @@ export default async function DashboardPage({
             💸 SplitMate
           </Link>
           <div className="flex items-center gap-2">
-            <Link href="/households">
-              <Button variant="ghost" size="sm">
-                🏠 Foyers
-              </Button>
-            </Link>
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/households">🏠 Foyers</Link>
+            </Button>
             <span className="text-sm text-zinc-500 dark:text-zinc-200">
               {session.user.name ?? session.user.email}
             </span>
@@ -95,9 +93,9 @@ export default async function DashboardPage({
                 : `${totalCount} session${totalCount > 1 ? "s" : ""}`}
             </p>
           </div>
-          <Link href="/sessions/new">
-            <Button>+ Nouvelle session</Button>
-          </Link>
+          <Button asChild>
+            <Link href="/sessions/new">+ Nouvelle session</Link>
+          </Button>
         </div>
 
         {totalCount === 0 ? (
@@ -107,9 +105,9 @@ export default async function DashboardPage({
               <p className="text-zinc-500 dark:text-zinc-400 mb-4">
                 Créez votre première session pour commencer à partager vos dépenses.
               </p>
-              <Link href="/sessions/new">
-                <Button>Créer une session</Button>
-              </Link>
+              <Button asChild>
+                <Link href="/sessions/new">Créer une session</Link>
+              </Button>
             </CardContent>
           </Card>
         ) : (
@@ -126,54 +124,64 @@ export default async function DashboardPage({
                 const partner = isCreator ? s.invitee : s.creator;
 
                 return (
-                  <Link key={s.id} href={`/sessions/${s.id}`}>
-                    <Card className="hover:shadow-md transition-shadow cursor-pointer">
-                      <CardHeader className="pb-2">
-                        <div className="flex items-center justify-between">
-                          <CardTitle className="text-base">{s.title}</CardTitle>
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                                s.status === "OPEN"
-                                  ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300"
-                                  : "bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300"
-                              }`}
-                            >
-                              {s.status === "OPEN" ? "Active" : "Fermée"}
-                            </span>
+                  <Card
+                    key={s.id}
+                    className="relative hover:shadow-md transition-shadow"
+                  >
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base">
+                          <Link
+                            href={`/sessions/${s.id}`}
+                            className="rounded after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:focus-visible:ring-zinc-500"
+                          >
+                            {s.title}
+                          </Link>
+                        </CardTitle>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                              s.status === "OPEN"
+                                ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300"
+                                : "bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300"
+                            }`}
+                          >
+                            {s.status === "OPEN" ? "Active" : "Fermée"}
+                          </span>
+                          <div className="relative z-10">
                             <SessionActions sessionId={s.id} isCreator={isCreator} />
                           </div>
                         </div>
-                        <CardDescription>
-                          {partner
-                            ? `Avec ${partner.name ?? "Invité"}`
-                            : "En attente d'un invité"}
-                          {s.household && (
-                            <Link
-                              href={`/households/${s.household.id}`}
-                              className="ml-2 inline-flex items-center text-xs px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/60"
-                            >
-                              🏠 {s.household.name}
-                            </Link>
-                          )}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="pt-0">
-                        <div className="flex items-center justify-between text-sm text-zinc-500 dark:text-zinc-400">
-                          <span>
-                            {sharedExpenses.length} partagée
-                            {sharedExpenses.length > 1 ? "s" : ""}
-                            {privateCount > 0
-                              ? ` · ${privateCount} privée${privateCount > 1 ? "s" : ""}`
-                              : ""}
-                          </span>
-                          <span className="font-medium text-zinc-900 dark:text-zinc-100">
-                            {formatCurrency(totalAmount, s.currency)}
-                          </span>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </Link>
+                      </div>
+                      <CardDescription>
+                        {partner
+                          ? `Avec ${partner.name ?? "Invité"}`
+                          : "En attente d'un invité"}
+                        {s.household && (
+                          <Link
+                            href={`/households/${s.household.id}`}
+                            className="relative z-10 ml-2 inline-flex items-center text-xs px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/60"
+                          >
+                            🏠 {s.household.name}
+                          </Link>
+                        )}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="pt-0">
+                      <div className="flex items-center justify-between text-sm text-zinc-500 dark:text-zinc-400">
+                        <span>
+                          {sharedExpenses.length} partagée
+                          {sharedExpenses.length > 1 ? "s" : ""}
+                          {privateCount > 0
+                            ? ` · ${privateCount} privée${privateCount > 1 ? "s" : ""}`
+                            : ""}
+                        </span>
+                        <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                          {formatCurrency(totalAmount, s.currency)}
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
                 );
               })}
             </div>
@@ -186,18 +194,14 @@ export default async function DashboardPage({
                 </p>
                 <div className="flex gap-2">
                   {page > 1 && (
-                    <Link href={`/dashboard?page=${page - 1}`}>
-                      <Button variant="outline" size="sm">
-                        ← Précédent
-                      </Button>
-                    </Link>
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={`/dashboard?page=${page - 1}`}>← Précédent</Link>
+                    </Button>
                   )}
                   {page < totalPages && (
-                    <Link href={`/dashboard?page=${page + 1}`}>
-                      <Button variant="outline" size="sm">
-                        Suivant →
-                      </Button>
-                    </Link>
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={`/dashboard?page=${page + 1}`}>Suivant →</Link>
+                    </Button>
                   )}
                 </div>
               </div>

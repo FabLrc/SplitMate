@@ -36,7 +36,6 @@ export default async function SessionPage({
   if (!isMember) redirect("/dashboard");
 
   const summary = calculateSessionSummary(expSession);
-  const shareUrl = `${(process.env.NEXTAUTH_URL ?? "").replace(/\/$/, "")}/join/${expSession.shareCode}`;
 
   return (
     <SessionView
@@ -44,7 +43,7 @@ export default async function SessionPage({
       expSession={JSON.parse(JSON.stringify(expSession))}
       currentUserId={session.user.id}
       summary={summary}
-      shareUrl={shareUrl}
+      shareCode={expSession.shareCode}
       currency={expSession.currency}
     />
   );

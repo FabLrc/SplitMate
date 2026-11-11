@@ -38,7 +38,7 @@ interface Props {
   expSession: SessionWithRelations;
   currentUserId: string;
   summary: SessionSummary | null;
-  shareUrl: string;
+  shareCode: string;
   currency: string;
 }
 
@@ -95,38 +95,60 @@ export function SessionView({
   expSession: initialSession,
   currentUserId,
   summary: initialSummary,
-  shareUrl,
+  shareCode,
   currency,
 }: Props) {
   const fmt = (amount: number) => formatCurrency(amount, currency);
   const [session, setSession] = useState(initialSession);
   const [tab, setTab] = useState<Tab>("expenses");
   const [copied, setCopied] = useState(false);
+  const [manualShareUrl, setManualShareUrl] = useState("");
+  const copyTimer = useRef<number | undefined>(undefined);
 
   const titleRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
 
   // Auto-refresh: near-real-time poll (3s) + refetch on window focus.
   // Polling is skipped while the tab is hidden to avoid wasted requests; the
   // focus/visibility listeners trigger an immediate refresh when the user comes
   // back, so the data is fresh the moment the tab is visible again.
   const refreshing = useRef(false);
+  const mutationEpoch = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Any local mutation bumps the epoch twice (start + end). A poll response is
+  // only applied when the epoch is unchanged since the request started, so a
+  // response captured before a mutation cannot overwrite optimistic state.
+
   const refreshSession = useCallback(async () => {
     if (refreshing.current || document.hidden) return;
     refreshing.current = true;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const requestEpoch = mutationEpoch.current;
     try {
       const res = await fetch(`/api/sessions/${initialSession.id}`, {
         cache: "no-store",
+        signal: controller.signal,
       });
-      if (res.ok) {
-        const data = await res.json();
+      if (res.status === 401) {
+        router.replace("/auth/signin");
+        return;
+      }
+      if (!res.ok) return;
+      const data = await res.json();
+      // Epoch increments by two per mutation (start + end), so an odd epoch
+      // means a mutation is still in flight; never apply a response then.
+      if (mutationEpoch.current === requestEpoch && requestEpoch % 2 === 0) {
         setSession(data);
       }
     } catch {
       // silently ignore network errors during background refresh
     } finally {
+      if (abortRef.current === controller) abortRef.current = null;
       refreshing.current = false;
     }
-  }, [initialSession.id]);
+  }, [initialSession.id, router]);
 
   useEffect(() => {
     // The first refresh goes through a timer so it does not set state during
@@ -144,8 +166,15 @@ export function SessionView({
       clearInterval(interval);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisible);
+      abortRef.current?.abort();
     };
   }, [refreshSession]);
+
+  useEffect(() => {
+    return () => {
+      window.clearTimeout(copyTimer.current);
+    };
+  }, []);
 
   // Add expense
   const [showForm, setShowForm] = useState(false);
@@ -167,6 +196,8 @@ export function SessionView({
 
   // Delete
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState("");
 
   // Edit expense
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -205,7 +236,6 @@ export function SessionView({
   // Delete / Leave session
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const router = useRouter();
 
   // Search
   const [search, setSearch] = useState("");
@@ -231,64 +261,87 @@ export function SessionView({
   );
 
   async function copyShareLink() {
-    await navigator.clipboard.writeText(shareUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const url = new URL(`/join/${shareCode}`, window.location.origin).toString();
+    try {
+      await navigator.clipboard.writeText(url);
+      setManualShareUrl("");
+      setCopied(true);
+      window.clearTimeout(copyTimer.current);
+      copyTimer.current = window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+      setManualShareUrl(url);
+    }
   }
 
   async function addExpense(e: React.FormEvent) {
     e.preventDefault();
     setFormLoading(true);
     setFormError("");
+    mutationEpoch.current += 1;
 
-    const res = await fetch(`/api/sessions/${session.id}/expenses`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        label: formData.label,
-        amount: parseFloat(formData.amount),
-        splitRatio: formData.splitRatio
-          ? (isCreator ? parseFloat(formData.splitRatio) / 100 : 1 - parseFloat(formData.splitRatio) / 100)
-          : null,
-        date: formData.date ? new Date(formData.date).toISOString() : undefined,
-        toDiscuss: formData.toDiscuss,
-        isShared: formData.isShared,
-      }),
-    });
+    try {
+      const res = await fetch(`/api/sessions/${session.id}/expenses`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          label: formData.label,
+          amount: parseFloat(formData.amount),
+          splitRatio: formData.splitRatio
+            ? (isCreator ? parseFloat(formData.splitRatio) / 100 : 1 - parseFloat(formData.splitRatio) / 100)
+            : null,
+          date: formData.date ? new Date(formData.date).toISOString() : undefined,
+          toDiscuss: formData.toDiscuss,
+          isShared: formData.isShared,
+        }),
+      });
 
-    if (!res.ok) {
-      const data = await res.json();
-      setFormError(data.error ?? "Erreur lors de l'ajout.");
+      if (!res.ok) {
+        const data = await res.json();
+        setFormError(data.error ?? "Erreur lors de l'ajout.");
+        return;
+      }
+
+      const newExpense: ExpenseWithAdder = await res.json();
+      setSession((prev) => ({ ...prev, expenses: [newExpense, ...prev.expenses] }));
+      setFormData({
+        label: "",
+        amount: "",
+        splitRatio: "",
+        date: new Date().toISOString().split("T")[0],
+        toDiscuss: false,
+        isShared: true,
+      });
+      titleRef.current?.focus();
+    } finally {
       setFormLoading(false);
-      return;
+      mutationEpoch.current += 1;
     }
-
-    const newExpense: ExpenseWithAdder = await res.json();
-    setSession((prev) => ({ ...prev, expenses: [newExpense, ...prev.expenses] }));
-    setFormData({
-      label: "",
-      amount: "",
-      splitRatio: "",
-      date: new Date().toISOString().split("T")[0],
-      toDiscuss: false,
-      isShared: true,
-    });
-    setFormLoading(false);
-    titleRef.current?.focus();
   }
 
   async function deleteExpense(expenseId: string) {
+    mutationEpoch.current += 1;
     setDeletingId(expenseId);
-    const res = await fetch(`/api/sessions/${session.id}/expenses/${expenseId}`, {
-      method: "DELETE",
-    });
-    if (res.ok) {
+    setDeleteError("");
+    try {
+      const res = await fetch(`/api/sessions/${session.id}/expenses/${expenseId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        setDeleteError("La dépense n'a pas pu être supprimée. Réessayez.");
+        return;
+      }
       setSession((prev) => ({
         ...prev,
         expenses: prev.expenses.filter((e) => e.id !== expenseId),
       }));
+      setPendingDeleteId(null);
+    } catch {
+      setDeleteError("Connexion impossible. La dépense n'a pas été supprimée.");
+    } finally {
+      setDeletingId(null);
+      mutationEpoch.current += 1;
     }
-    setDeletingId(null);
   }
 
   function startEdit(expense: ExpenseWithAdder) {
@@ -310,50 +363,59 @@ export function SessionView({
     e.preventDefault();
     setEditLoading(true);
     setEditError("");
+    mutationEpoch.current += 1;
 
-    const res = await fetch(`/api/sessions/${session.id}/expenses/${expenseId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        label: editForm.label,
-        amount: parseFloat(editForm.amount),
-        splitRatio: editForm.splitRatio
-          ? (isCreator ? parseFloat(editForm.splitRatio) / 100 : 1 - parseFloat(editForm.splitRatio) / 100)
-          : null,
-        date: editForm.date ? new Date(editForm.date).toISOString() : undefined,
-        toDiscuss: editForm.toDiscuss,
-        isShared: editForm.isShared,
-      }),
-    });
+    try {
+      const res = await fetch(`/api/sessions/${session.id}/expenses/${expenseId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          label: editForm.label,
+          amount: parseFloat(editForm.amount),
+          splitRatio: editForm.splitRatio
+            ? (isCreator ? parseFloat(editForm.splitRatio) / 100 : 1 - parseFloat(editForm.splitRatio) / 100)
+            : null,
+          date: editForm.date ? new Date(editForm.date).toISOString() : undefined,
+          toDiscuss: editForm.toDiscuss,
+          isShared: editForm.isShared,
+        }),
+      });
 
-    if (!res.ok) {
-      const data = await res.json();
-      setEditError(data.error ?? "Erreur lors de la modification.");
+      if (!res.ok) {
+        const data = await res.json();
+        setEditError(data.error ?? "Erreur lors de la modification.");
+        return;
+      }
+
+      const updated: ExpenseWithAdder = await res.json();
+      setSession((prev) => ({
+        ...prev,
+        expenses: prev.expenses.map((e) => (e.id === expenseId ? updated : e)),
+      }));
+      setEditingId(null);
+    } finally {
       setEditLoading(false);
-      return;
+      mutationEpoch.current += 1;
     }
-
-    const updated: ExpenseWithAdder = await res.json();
-    setSession((prev) => ({
-      ...prev,
-      expenses: prev.expenses.map((e) => (e.id === expenseId ? updated : e)),
-    }));
-    setEditingId(null);
-    setEditLoading(false);
   }
 
   async function closeSession() {
+    mutationEpoch.current += 1;
     setClosingSession(true);
-    const res = await fetch(`/api/sessions/${session.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "CLOSED" }),
-    });
-    if (res.ok) {
-      setSession((prev) => ({ ...prev, status: "CLOSED" }));
+    try {
+      const res = await fetch(`/api/sessions/${session.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "CLOSED" }),
+      });
+      if (res.ok) {
+        setSession((prev) => ({ ...prev, status: "CLOSED" }));
+      }
+    } finally {
+      setClosingSession(false);
+      setConfirmClose(false);
+      mutationEpoch.current += 1;
     }
-    setClosingSession(false);
-    setConfirmClose(false);
   }
 
   async function deleteOrLeaveSession() {
@@ -385,77 +447,98 @@ export function SessionView({
     }
     // Convert "my share" percentage to creator's ratio
     const creatorRatio = isCreator ? pct / 100 : (100 - pct) / 100;
-    const res = await fetch(`/api/sessions/${session.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ defaultSplitRatio: creatorRatio }),
-    });
-    if (!res.ok) {
-      const data = await res.json();
-      setSplitError(data.error ?? "Erreur lors de la modification.");
+    mutationEpoch.current += 1;
+    try {
+      const res = await fetch(`/api/sessions/${session.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ defaultSplitRatio: creatorRatio }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setSplitError(data.error ?? "Erreur lors de la modification.");
+        return;
+      }
+      const updated = await res.json();
+      setSession((prev) => ({ ...prev, defaultSplitRatio: updated.defaultSplitRatio }));
+      setEditingSplit(false);
+      setSplitConfirm(false);
+    } finally {
       setSplitSaving(false);
-      return;
+      mutationEpoch.current += 1;
     }
-    const updated = await res.json();
-    setSession((prev) => ({ ...prev, defaultSplitRatio: updated.defaultSplitRatio }));
-    setEditingSplit(false);
-    setSplitConfirm(false);
-    setSplitSaving(false);
   }
 
   async function settleBalance(amount: number, splitRatio: number) {
+    mutationEpoch.current += 1;
     setSettling(true);
-    const res = await fetch(`/api/sessions/${session.id}/expenses`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        label: "Remboursement",
-        amount,
-        splitRatio,
-        date: new Date().toISOString(),
-      }),
-    });
-    if (res.ok) {
-      const newExpense: ExpenseWithAdder = await res.json();
-      setSession((prev) => ({ ...prev, expenses: [newExpense, ...prev.expenses] }));
-      setTab("expenses");
+    try {
+      const res = await fetch(`/api/sessions/${session.id}/expenses`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          label: "Remboursement",
+          amount,
+          splitRatio,
+          date: new Date().toISOString(),
+        }),
+      });
+      if (res.ok) {
+        const newExpense: ExpenseWithAdder = await res.json();
+        setSession((prev) => ({ ...prev, expenses: [newExpense, ...prev.expenses] }));
+        setTab("expenses");
+      }
+    } finally {
+      setSettling(false);
+      mutationEpoch.current += 1;
     }
-    setSettling(false);
   }
 
   async function toggleDiscuss(expense: ExpenseWithAdder) {
     const next = !expense.toDiscuss;
     const previous = expense.toDiscuss;
+    mutationEpoch.current += 1;
     setSession((prev) => ({
       ...prev,
       expenses: prev.expenses.map((e) =>
         e.id === expense.id ? { ...e, toDiscuss: next } : e
       ),
     }));
-    const res = await fetch(
-      `/api/sessions/${session.id}/expenses/${expense.id}`,
-      {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ toDiscuss: next }),
+    try {
+      const res = await fetch(
+        `/api/sessions/${session.id}/expenses/${expense.id}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ toDiscuss: next }),
+        }
+      );
+      if (!res.ok) {
+        setSession((prev) => ({
+          ...prev,
+          expenses: prev.expenses.map((e) =>
+            e.id === expense.id ? { ...e, toDiscuss: previous } : e
+          ),
+        }));
+        return;
       }
-    );
-    if (!res.ok) {
+      const updated: ExpenseWithAdder = await res.json();
+      setSession((prev) => ({
+        ...prev,
+        expenses: prev.expenses.map((e) =>
+          e.id === expense.id ? updated : e
+        ),
+      }));
+    } catch {
       setSession((prev) => ({
         ...prev,
         expenses: prev.expenses.map((e) =>
           e.id === expense.id ? { ...e, toDiscuss: previous } : e
         ),
       }));
-      return;
+    } finally {
+      mutationEpoch.current += 1;
     }
-    const updated: ExpenseWithAdder = await res.json();
-    setSession((prev) => ({
-      ...prev,
-      expenses: prev.expenses.map((e) =>
-        e.id === expense.id ? updated : e
-      ),
-    }));
   }
 
   const filteredExpenses = session.expenses.filter((e) => {
@@ -515,6 +598,23 @@ export function SessionView({
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-5 space-y-5">
+        <span className="sr-only" aria-live="polite">
+          {copied ? "Lien copié" : ""}
+        </span>
+        {manualShareUrl && (
+          <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-3 space-y-2">
+            <p className="text-sm text-amber-800 dark:text-amber-300">
+              Copie automatique impossible. Sélectionnez le lien ci-dessous :
+            </p>
+            <Input
+              readOnly
+              value={manualShareUrl}
+              aria-label="Lien d'invitation"
+              onFocus={(e) => e.currentTarget.select()}
+              className="font-mono text-xs"
+            />
+          </div>
+        )}
         {/* Partner info */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm">
@@ -798,6 +898,15 @@ export function SessionView({
               </>
             )}
 
+            {deleteError && (
+              <p
+                role="alert"
+                className="text-sm text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900 rounded-lg px-3 py-2"
+              >
+                {deleteError}
+              </p>
+            )}
+
             {/* My expenses */}
             <ExpenseList
               title="Mes dépenses"
@@ -806,7 +915,13 @@ export function SessionView({
               isCreator={isCreator}
               defaultSplitRatio={session.defaultSplitRatio}
               formatCurrency={fmt}
-              onDelete={deleteExpense}
+              onConfirmDelete={deleteExpense}
+              pendingDeleteId={pendingDeleteId}
+              onRequestDelete={(id) => {
+                setDeleteError("");
+                setPendingDeleteId(id);
+              }}
+              onCancelDelete={() => setPendingDeleteId(null)}
               deletingId={deletingId}
               canDelete={session.status === "OPEN"}
               canToggleDiscuss={session.status === "OPEN"}
@@ -830,7 +945,13 @@ export function SessionView({
                 isCreator={isCreator}
                 defaultSplitRatio={session.defaultSplitRatio}
                 formatCurrency={fmt}
-                onDelete={deleteExpense}
+                onConfirmDelete={deleteExpense}
+                pendingDeleteId={pendingDeleteId}
+                onRequestDelete={(id) => {
+                  setDeleteError("");
+                  setPendingDeleteId(id);
+                }}
+                onCancelDelete={() => setPendingDeleteId(null)}
                 deletingId={deletingId}
                 canDelete={false}
                 canToggleDiscuss={session.status === "OPEN"}
@@ -961,7 +1082,10 @@ function ExpenseList({
   isCreator,
   defaultSplitRatio,
   formatCurrency,
-  onDelete,
+  onConfirmDelete,
+  pendingDeleteId,
+  onRequestDelete,
+  onCancelDelete,
   deletingId,
   canDelete,
   canToggleDiscuss,
@@ -981,7 +1105,10 @@ function ExpenseList({
   isCreator: boolean;
   defaultSplitRatio: number;
   formatCurrency: (n: number) => string;
-  onDelete: (id: string) => void;
+  onConfirmDelete: (id: string) => void;
+  pendingDeleteId: string | null;
+  onRequestDelete: (id: string) => void;
+  onCancelDelete: () => void;
   deletingId: string | null;
   canDelete: boolean;
   canToggleDiscuss: boolean;
@@ -1108,6 +1235,39 @@ function ExpenseList({
             );
           }
 
+          if (pendingDeleteId === expense.id) {
+            return (
+              <div
+                key={expense.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 px-4 py-3"
+              >
+                <p className="text-sm font-medium text-red-700 dark:text-red-300">
+                  Supprimer cette dépense ?
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-10 px-4"
+                    onClick={onCancelDelete}
+                    disabled={deletingId === expense.id}
+                  >
+                    Annuler
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="h-10 px-4"
+                    onClick={() => onConfirmDelete(expense.id)}
+                    disabled={deletingId === expense.id}
+                  >
+                    {deletingId === expense.id ? "Suppression…" : "Supprimer"}
+                  </Button>
+                </div>
+              </div>
+            );
+          }
+
           return (
             <div
               key={expense.id}
@@ -1171,7 +1331,7 @@ function ExpenseList({
               )}
               {canDelete && (
                 <button
-                  onClick={() => onDelete(expense.id)}
+                  onClick={() => onRequestDelete(expense.id)}
                   disabled={deletingId === expense.id}
                   className="flex items-center justify-center w-9 h-9 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950 transition-colors shrink-0"
                   aria-label="Supprimer"

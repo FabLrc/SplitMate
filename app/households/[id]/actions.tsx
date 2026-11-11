@@ -115,9 +115,11 @@ export function HouseholdActions(props: MainProps) {
         </p>
       )}
       <div className="flex flex-wrap gap-2">
-        <Link href={`/sessions/new?household=${props.householdId}`}>
-          <Button size="sm">+ Nouvelle session dans ce foyer</Button>
-        </Link>
+        <Button asChild size="sm">
+          <Link href={`/sessions/new?household=${props.householdId}`}>
+            + Nouvelle session dans ce foyer
+          </Link>
+        </Button>
         <Button variant="outline" size="sm" onClick={copy}>
           {copied ? "✓ Copié !" : "🔗 Copier le lien"}
         </Button>

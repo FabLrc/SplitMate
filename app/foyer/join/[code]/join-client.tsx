@@ -51,16 +51,16 @@ export function JoinClient({ householdName, inviterName, shareCode }: Props) {
               <span className="bg-white px-2 text-zinc-400">ou</span>
             </div>
           </div>
-          <Link href={`/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`}>
-            <Button variant="outline" className="w-full">
+          <Button asChild variant="outline" className="w-full">
+            <Link href={`/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`}>
               Se connecter avec un email
-            </Button>
-          </Link>
-          <Link href={`/auth/register?callbackUrl=${encodeURIComponent(callbackUrl)}`}>
-            <Button variant="ghost" className="w-full text-sm">
+            </Link>
+          </Button>
+          <Button asChild variant="ghost" className="w-full text-sm">
+            <Link href={`/auth/register?callbackUrl=${encodeURIComponent(callbackUrl)}`}>
               Pas de compte ? S&apos;inscrire
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </CardContent>
       </Card>
     </main>
