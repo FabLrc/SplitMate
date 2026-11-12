@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { nanoid } from "nanoid";
+import { logServerError } from "@/lib/log";
 
 // This route backs the client polling on the session page — it must never be
 // served from any cache layer (CDN, Next data cache, or browser HTTP cache).
@@ -85,9 +87,11 @@ export async function DELETE(
       if (isCreator) {
         await tx.expenseSession.delete({ where: { id } });
       } else {
+        // Rotate the share code: the link the user was given must not let
+        // anyone (including the person who just left) back into the history.
         await tx.expenseSession.update({
           where: { id },
-          data: { inviteeId: null },
+          data: { inviteeId: null, shareCode: nanoid(8) },
         });
       }
     });
@@ -99,7 +103,7 @@ export async function DELETE(
     if (error instanceof TxError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
-    console.error(error);
+    logServerError("session-delete", error);
     return NextResponse.json({ error: "Erreur serveur." }, { status: 500 });
   }
 }
@@ -107,8 +111,10 @@ export async function DELETE(
 const updateSessionSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   defaultSplitRatio: z.number().min(0).max(1).optional(),
-  currency: z.string().length(3).optional(),
-  status: z.enum(["OPEN", "CLOSED"]).optional(),
+  currency: z.string().regex(/^[A-Z]{3}$/).optional(),
+  // Reopening is intentionally impossible: it changed the split applied to the
+  // invitee's expenses after the fact.
+  status: z.literal("CLOSED").optional(),
 });
 
 export async function PUT(
@@ -133,6 +139,8 @@ export async function PUT(
       if (!expSession) throw new TxError("Session introuvable.", 404);
       if (expSession.creatorId !== userId)
         throw new TxError("Seul le créateur peut modifier la session.", 403);
+      if (expSession.status === "CLOSED")
+        throw new TxError("La session est fermée.", 400);
 
       return tx.expenseSession.update({
         where: { id },
@@ -158,7 +166,7 @@ export async function PUT(
         { status: 400 }
       );
     }
-    console.error(error);
+    logServerError("session-update", error);
     return NextResponse.json({ error: "Erreur serveur." }, { status: 500 });
   }
 }

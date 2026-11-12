@@ -1,5 +1,6 @@
 import webpush from "web-push";
 import { prisma } from "@/lib/prisma";
+import { isAllowedPushEndpoint } from "@/lib/push-endpoint";
 
 let initialized = false;
 
@@ -34,8 +35,18 @@ export async function sendPushToUser(userId: string, payload: PushPayload) {
     where: { userId },
   });
 
+  // Defense in depth: rows created before endpoint validation existed (or by
+  // any future path) must never reach a non-vendor host.
+  const allowed = subs.filter((sub) => isAllowedPushEndpoint(sub.endpoint));
+  const rejected = subs.filter((sub) => !isAllowedPushEndpoint(sub.endpoint));
+  if (rejected.length > 0) {
+    await prisma.pushSubscription.deleteMany({
+      where: { id: { in: rejected.map((sub) => sub.id) } },
+    });
+  }
+
   const results = await Promise.allSettled(
-    subs.map(async (sub) => {
+    allowed.map(async (sub) => {
       try {
         await webpush.sendNotification(
           {
@@ -47,7 +58,7 @@ export async function sendPushToUser(userId: string, payload: PushPayload) {
       } catch (err: unknown) {
         const statusCode =
           err && typeof err === "object" && "statusCode" in err
-            ? (err as { statusCode: number }).statusCode
+            ? err.statusCode
             : 0;
         // 404 or 410 means the subscription is no longer valid
         if (statusCode === 404 || statusCode === 410) {
@@ -59,5 +70,5 @@ export async function sendPushToUser(userId: string, payload: PushPayload) {
   );
 
   const sent = results.filter((r) => r.status === "fulfilled").length;
-  return { sent, total: subs.length };
+  return { sent, total: allowed.length };
 }

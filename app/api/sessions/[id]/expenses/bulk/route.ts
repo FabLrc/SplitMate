@@ -9,7 +9,7 @@ const bulkExpenseSchema = z.object({
     .array(
       z.object({
         label: z.string().min(1).max(200),
-        amount: z.number().positive(),
+        amount: z.number().positive().max(10_000_000),
         date: z.string().datetime().optional(),
         splitRatio: z.number().min(0).max(1).nullable().optional(),
         toDiscuss: z.boolean().optional(),

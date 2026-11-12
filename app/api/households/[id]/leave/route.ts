@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
+import { nanoid } from "nanoid";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -31,14 +32,21 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     );
   }
 
-  await prisma.householdMember.delete({
-    where: {
-      householdId_userId: {
-        householdId: id,
-        userId: session.user.id,
+  await prisma.$transaction([
+    prisma.householdMember.delete({
+      where: {
+        householdId_userId: {
+          householdId: id,
+          userId: session.user.id,
+        },
       },
-    },
-  });
+    }),
+    // The link must not let the departing member walk back in.
+    prisma.household.update({
+      where: { id },
+      data: { shareCode: nanoid(8) },
+    }),
+  ]);
 
   revalidatePath("/households");
   revalidatePath(`/households/${id}`);

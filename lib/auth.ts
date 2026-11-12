@@ -6,13 +6,44 @@ import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { rateLimit, resetRateLimit } from "@/lib/rate-limit";
+import { normalizeEmail } from "@/lib/email";
 import type { Provider } from "next-auth/providers";
+
+const LOGIN_WINDOW_MS = 5 * 60 * 1000;
+const LOGIN_ATTEMPTS_PER_EMAIL = 10;
+const LOGIN_ATTEMPTS_PER_IP = 20;
+
+// bcrypt hash of an unused password. Comparing against it when the account
+// does not exist keeps response time constant, so login cannot be used to
+// enumerate registered emails.
+const DUMMY_PASSWORD_HASH =
+  "$2b$12$ZssyxeoAHBU0BMYm769Euui7YW4kAwvgzDFQbDrX3YeHgXFZHO2QW";
+
+function readStringClaim(profile: unknown, claim: string): string {
+  if (!profile || typeof profile !== "object" || !(claim in profile)) return "";
+  const value = Reflect.get(profile, claim);
+  return typeof value === "string" ? value : "";
+}
+
+function readBooleanClaim(profile: unknown, claim: string): boolean | undefined {
+  if (!profile || typeof profile !== "object" || !(claim in profile)) {
+    return undefined;
+  }
+  const value = Reflect.get(profile, claim);
+  return typeof value === "boolean" ? value : undefined;
+}
 
 const providers: Provider[] = [
   Google({
     clientId: process.env.GOOGLE_CLIENT_ID!,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
     checks: ["state"],
+    // A verified Google email proves mailbox ownership. The signIn callback
+    // below decides whether auto-linking is safe: it revokes an unverified
+    // password credential that squatted the address, so an attacker cannot
+    // pre-register a victim's email and lock them out.
+    allowDangerousEmailAccountLinking: true,
   }),
   Discord({
     clientId: process.env.DISCORD_CLIENT_ID!,
@@ -23,9 +54,9 @@ const providers: Provider[] = [
     // https://authjs.dev when unset, which makes every login fail with
     // OAUTH_INVALID_RESPONSE.
     issuer: "https://discord.com",
-    // Only for Discord: both Discord and Google verify the email, so an
-    // OAuth-only account can safely be matched by email. The signIn callback
-    // below neutralizes automatic linking for password accounts.
+    // Both Discord and Google verify the email, so an OAuth-only account can
+    // safely be matched by email. The signIn callback below neutralizes
+    // automatic linking for password accounts.
     allowDangerousEmailAccountLinking: true,
   }),
   Credentials({
@@ -33,21 +64,45 @@ const providers: Provider[] = [
       email: { label: "Email", type: "email" },
       password: { label: "Mot de passe", type: "password" },
     },
-    async authorize(credentials) {
-      if (!credentials?.email || !credentials?.password) return null;
+    async authorize(credentials, request) {
+      const email =
+        typeof credentials?.email === "string"
+          ? normalizeEmail(credentials.email)
+          : "";
+      const password =
+        typeof credentials?.password === "string" ? credentials.password : "";
+      if (!email || !password) return null;
+
+      // Per-instance throttling: bcrypt slows an attacker down, but without a
+      // cap a single instance can still be ground through. Counters are keyed
+      // by email and by client IP, and reset after a successful login.
+      const ip =
+        request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+        "unknown";
+      const emailLimit = rateLimit(
+        `login:email:${email}`,
+        LOGIN_ATTEMPTS_PER_EMAIL,
+        LOGIN_WINDOW_MS
+      );
+      const ipLimit = rateLimit(
+        `login:ip:${ip}`,
+        LOGIN_ATTEMPTS_PER_IP,
+        LOGIN_WINDOW_MS
+      );
+      if (!emailLimit.ok || !ipLimit.ok) return null;
 
       const user = await prisma.user.findUnique({
-        where: { email: credentials.email as string },
+        where: { email },
       });
 
-      if (!user || !user.passwordHash) return null;
-
       const isValid = await bcrypt.compare(
-        credentials.password as string,
-        user.passwordHash
+        password,
+        user?.passwordHash ?? DUMMY_PASSWORD_HASH
       );
 
-      if (!isValid) return null;
+      if (!user || !user.passwordHash || !isValid) return null;
+
+      resetRateLimit(`login:email:${email}`);
 
       return {
         id: user.id,
@@ -79,7 +134,9 @@ const logger: NonNullable<NextAuthConfig["logger"]> = {
 export const authConfig: NextAuthConfig = {
   adapter: PrismaAdapter(prisma),
   providers,
-  trustHost: true,
+  // Vercel is the only expected production host. Elsewhere the Host header is
+  // only trusted for local development; self-hosting must set AUTH_URL.
+  trustHost: process.env.VERCEL === "1" || process.env.NODE_ENV !== "production",
   useSecureCookies: process.env.NODE_ENV === "production",
   logger,
   session: {
@@ -91,31 +148,43 @@ export const authConfig: NextAuthConfig = {
   },
   callbacks: {
     async signIn({ account, profile }) {
-      if (account?.provider === "discord") {
-        // User.email is required in the schema: reject Discord accounts
-        // without a verified email instead of crashing in createUser.
-        if (!profile?.email || profile.verified !== true) {
-          return "/auth/signin?error=DiscordEmailUnverified";
-        }
+      if (!account || account.provider === "credentials") return true;
 
-        // allowDangerousEmailAccountLinking above lets Auth.js link Discord to
-        // an existing user by email without an active session. Never allow
-        // that for a credentials account: its email was never verified, so it
-        // could be an account takeover.
-        const existingUser = await prisma.user.findUnique({
-          where: { email: profile.email },
-          select: { id: true, passwordHash: true },
-        });
+      // Only providers that verify mailbox ownership may match an account by
+      // email (Google: `email_verified`, Discord: `verified`).
+      const email = normalizeEmail(readStringClaim(profile, "email"));
+      const emailVerified =
+        account.provider === "google"
+          ? readBooleanClaim(profile, "email_verified") !== false
+          : account.provider === "discord"
+            ? readBooleanClaim(profile, "verified") === true
+            : false;
 
-        if (existingUser?.passwordHash) {
-          // Explicit linking from the dashboard: the session already belongs
-          // to the same user, so no takeover is possible.
-          const currentSession = await auth();
-          if (currentSession?.user?.id !== existingUser.id) {
-            return "/auth/signin?error=OAuthAccountNotLinked";
-          }
-        }
+      if (!email || !emailVerified) {
+        return account.provider === "discord"
+          ? "/auth/signin?error=DiscordEmailUnverified"
+          : "/auth/signin?error=OAuthEmailUnverified";
       }
+
+      const existingUser = await prisma.user.findUnique({
+        where: { email },
+        select: { id: true, passwordHash: true },
+      });
+      if (!existingUser?.passwordHash) return true;
+
+      // Explicit linking from the dashboard: the session already belongs to
+      // the same user, so no takeover is possible.
+      const currentSession = await auth();
+      if (currentSession?.user?.id === existingUser.id) return true;
+
+      // The provider just proved control of this mailbox. A password
+      // credential created without email verification must not keep
+      // ownership of it, otherwise registering a victim's address first
+      // locks the victim out of their own account for good.
+      await prisma.user.update({
+        where: { id: existingUser.id },
+        data: { passwordHash: null },
+      });
       return true;
     },
     async session({ session, token }) {

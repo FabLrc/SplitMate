@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { nanoid } from "nanoid";
 import { z } from "zod";
+import { logServerError } from "@/lib/log";
 
 const createHouseholdSchema = z.object({
   name: z.string().min(1).max(100),
@@ -91,7 +92,7 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    console.error(error);
+    logServerError("household-create", error);
     return NextResponse.json({ error: "Erreur serveur." }, { status: 500 });
   }
 }

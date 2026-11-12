@@ -3,10 +3,13 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { logServerError } from "@/lib/log";
+
+const MAX_AMOUNT = 10_000_000;
 
 const addExpenseSchema = z.object({
   label: z.string().min(1).max(200),
-  amount: z.number().positive(),
+  amount: z.number().positive().max(MAX_AMOUNT),
   splitRatio: z.number().min(0).max(1).nullable().optional(),
   date: z.string().datetime().optional(),
   toDiscuss: z.boolean().optional(),
@@ -72,7 +75,7 @@ export async function POST(
         { status: 400 }
       );
     }
-    console.error(error);
+    logServerError("expense-create", error);
     return NextResponse.json({ error: "Erreur serveur." }, { status: 500 });
   }
 }

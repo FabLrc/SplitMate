@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendPushToUser } from "@/lib/push";
+import { isAuthorizedCron } from "@/lib/cron-auth";
 
 /**
  * Single daily cron (runs at 10 AM Paris time via Vercel Cron).
@@ -9,9 +10,16 @@ import { sendPushToUser } from "@/lib/push";
  *   2. Monthly reminder on the 1st of each month
  */
 export async function GET(req: NextRequest) {
-  // Verify Vercel cron secret
-  const authHeader = req.headers.get("authorization");
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) {
+    // Fail closed: without a secret the old check accepted the literal
+    // "Bearer undefined", letting anyone trigger mass push notifications.
+    return NextResponse.json(
+      { error: "CRON_SECRET is not configured." },
+      { status: 500 }
+    );
+  }
+  if (!isAuthorizedCron(req.headers.get("authorization"), secret)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -98,7 +106,7 @@ export async function GET(req: NextRequest) {
         });
         monthlyReminders++;
       } catch {
-        // Individual send failures are non-blocking
+        // Individual send failures are non-fetch errors
       }
     }
   }

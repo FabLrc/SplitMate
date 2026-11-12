@@ -1,7 +1,6 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
 import { JoinClient } from "./join-client";
 
 export default async function JoinPage({
@@ -17,7 +16,6 @@ export default async function JoinPage({
     select: {
       id: true,
       title: true,
-      shareCode: true,
       status: true,
       creatorId: true,
       inviteeId: true,
@@ -37,20 +35,19 @@ export default async function JoinPage({
     );
   }
 
-  // If already logged in, handle the join server-side
-  if (session?.user?.id) {
-    // Creator accessing their own session
-    if (expSession.creatorId === session.user.id) {
+  const userId = session?.user?.id;
+
+  // Navigating to this page never mutates anything: joining requires the
+  // explicit POST from the client, so a cross-site navigation cannot enrol the
+  // visitor in an attacker's session.
+  if (userId) {
+    if (expSession.creatorId === userId) {
       redirect(`/sessions/${expSession.id}`);
     }
-
-    // Already joined
-    if (expSession.inviteeId === session.user.id) {
+    if (expSession.inviteeId === userId) {
       redirect(`/sessions/${expSession.id}`);
     }
-
-    // Session already has a different invitee
-    if (expSession.inviteeId && expSession.inviteeId !== session.user.id) {
+    if (expSession.inviteeId) {
       return (
         <main className="flex flex-1 items-center justify-center px-4 py-16 text-center">
           <div>
@@ -63,24 +60,14 @@ export default async function JoinPage({
         </main>
       );
     }
-
-    // Join the session
-    await prisma.expenseSession.update({
-      where: { id: expSession.id },
-      data: { inviteeId: session.user.id },
-    });
-
-    revalidatePath(`/sessions/${expSession.id}`);
-    revalidatePath("/dashboard");
-    redirect(`/sessions/${expSession.id}`);
   }
 
-  // Not logged in — show join page
   return (
     <JoinClient
       sessionTitle={expSession.title}
       creatorName={expSession.creator.name ?? "Quelqu'un"}
       shareCode={code}
+      authenticated={Boolean(userId)}
     />
   );
 }

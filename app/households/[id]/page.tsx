@@ -35,6 +35,8 @@ export default async function HouseholdDetailPage({
         orderBy: { joinedAt: "asc" },
       },
       sessions: {
+        // Sessions of the household are private to their two members.
+        where: { OR: [{ creatorId: userId }, { inviteeId: userId }] },
         select: { id: true, title: true, createdAt: true },
         orderBy: { createdAt: "desc" },
         take: 10,

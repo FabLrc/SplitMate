@@ -489,8 +489,9 @@ export function ImportStatementDialog({
         )}
 
         <p className="mt-3 text-[11px] text-zinc-400 dark:text-zinc-500">
-          Le relevé est analysé par une IA ; vérifiez les dépenses avant de les
-          ajouter.
+          Le texte du relevé et vos propres dépenses passées sont envoyés à un
+          service d&apos;IA externe pour l&apos;analyse ; vérifiez les dépenses
+          avant de les ajouter.
         </p>
       </DialogContent>
     </Dialog>

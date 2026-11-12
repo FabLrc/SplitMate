@@ -3,10 +3,13 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { logServerError } from "@/lib/log";
+
+const MAX_AMOUNT = 10_000_000;
 
 const updateExpenseSchema = z.object({
   label: z.string().min(1).max(200).optional(),
-  amount: z.number().positive().optional(),
+  amount: z.number().positive().max(MAX_AMOUNT).optional(),
   splitRatio: z.number().min(0).max(1).nullable().optional(),
   date: z.string().datetime().optional(),
   toDiscuss: z.boolean().optional(),
@@ -42,15 +45,19 @@ export async function PUT(req: NextRequest, { params }: Params) {
       if (!expense || expense.sessionId !== id)
         throw new TxError("Dépense introuvable.", 404);
 
+      // Former invitees keep ownership of their expenses in the database, but
+      // must not be able to edit them once they left the session.
+      const isMember =
+        expense.session.creatorId === userId ||
+        expense.session.inviteeId === userId;
+      if (!isMember) throw new TxError("Accès refusé.", 403);
+
       // The "to discuss" flag is a shared session-level marker: either member may
       // toggle it. Other edits remain owner-only.
       const keys = Object.keys(data);
       const isOnlyFlagUpdate =
         keys.length > 0 && keys.every((k) => k === "toDiscuss");
-      const isMember =
-        expense.session.creatorId === userId ||
-        expense.session.inviteeId === userId;
-      if (expense.addedById !== userId && !(isOnlyFlagUpdate && isMember))
+      if (expense.addedById !== userId && !isOnlyFlagUpdate)
         throw new TxError("Vous ne pouvez modifier que vos propres dépenses.", 403);
 
       if (expense.session.status === "CLOSED")
@@ -82,7 +89,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
         { status: 400 }
       );
     }
-    console.error(error);
+    logServerError("expense-update", error);
     return NextResponse.json({ error: "Erreur serveur." }, { status: 500 });
   }
 }
@@ -104,6 +111,12 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
 
       if (!expense || expense.sessionId !== id)
         throw new TxError("Dépense introuvable.", 404);
+
+      const isMember =
+        expense.session.creatorId === userId ||
+        expense.session.inviteeId === userId;
+      if (!isMember) throw new TxError("Accès refusé.", 403);
+
       if (expense.addedById !== userId)
         throw new TxError("Vous ne pouvez supprimer que vos propres dépenses.", 403);
       if (expense.session.status === "CLOSED")
@@ -120,7 +133,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     if (error instanceof TxError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
-    console.error(error);
+    logServerError("expense-delete", error);
     return NextResponse.json({ error: "Erreur serveur." }, { status: 500 });
   }
 }

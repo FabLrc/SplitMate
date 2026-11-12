@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { rateLimit } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 import { extractText } from "unpdf";
 import {
@@ -28,6 +29,18 @@ export async function POST(
     return NextResponse.json(
       { error: "Non authentifié." },
       { status: 401, headers: NO_STORE }
+    );
+  }
+
+  // Each call costs a third-party LLM completion over up to 60k characters.
+  const limit = rateLimit(`import:${userId}`, 5, 10 * 60 * 1000);
+  if (!limit.ok) {
+    return NextResponse.json(
+      { error: "Trop d'imports. Réessayez dans quelques minutes." },
+      {
+        status: 429,
+        headers: { ...NO_STORE, "Retry-After": String(limit.retryAfter) },
+      }
     );
   }
 
@@ -155,6 +168,9 @@ export async function POST(
         currency: true,
         defaultSplitRatio: true,
         expenses: {
+          // Only the caller's own expenses: the partner's labels and amounts
+          // must not be sent to the AI provider without their consent.
+          where: { addedById: userId },
           select: { label: true, amount: true, isShared: true },
           orderBy: { date: "desc" },
           take: 30,

@@ -63,6 +63,7 @@ export function HouseholdActions(props: MainProps) {
     null | "leave" | "delete"
   >(null);
   const [busy, setBusy] = useState(false);
+  const [rotating, setRotating] = useState(false);
   const [error, setError] = useState("");
 
   const { shareCode, isOwner, canLeave } = props;
@@ -89,6 +90,22 @@ export function HouseholdActions(props: MainProps) {
     const data = await res.json().catch(() => ({}));
     setError(data.error ?? "Erreur lors de la sortie.");
     setConfirming(null);
+  }
+
+  async function rotateShareCode() {
+    setRotating(true);
+    setError("");
+    const res = await fetch(
+      `/api/households/${props.householdId}/rotate-share`,
+      { method: "POST" }
+    );
+    setRotating(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error ?? "Erreur lors du renouvellement du lien.");
+      return;
+    }
+    router.refresh();
   }
 
   async function deleteHousehold() {
@@ -123,6 +140,16 @@ export function HouseholdActions(props: MainProps) {
         <Button variant="outline" size="sm" onClick={copy}>
           {copied ? "✓ Copié !" : "🔗 Copier le lien"}
         </Button>
+        {isOwner && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={rotateShareCode}
+            disabled={rotating}
+          >
+            {rotating ? "…" : "Renouveler le lien"}
+          </Button>
+        )}
         {canLeave && !confirming && (
           <Button
             variant="ghost"

@@ -5,11 +5,12 @@ import { revalidatePath } from "next/cache";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { sendPushToUser } from "@/lib/push";
+import { logServerError } from "@/lib/log";
 
 const createSessionSchema = z.object({
   title: z.string().min(1).max(200),
   defaultSplitRatio: z.number().min(0).max(1).default(0.5),
-  currency: z.string().length(3).default("EUR"),
+  currency: z.string().regex(/^[A-Z]{3}$/).default("EUR"),
   // Pre-assign an invitee from a shared household.
   inviteeId: z.string().min(1).optional(),
   householdId: z.string().min(1).optional(),
@@ -108,7 +109,7 @@ export async function POST(req: NextRequest) {
         title: "Nouvelle session",
         body: `${session.user.name ?? "Quelqu'un"} vous a ajouté à "${data.title}".`,
         url,
-      }).catch((err) => console.error("push notify failed:", err));
+      }).catch((err) => logServerError("session-push", err));
     }
 
     return NextResponse.json(expenseSession, { status: 201 });
@@ -119,7 +120,7 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    console.error(error);
+    logServerError("session-create", error);
     return NextResponse.json({ error: "Erreur serveur." }, { status: 500 });
   }
 }

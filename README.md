@@ -41,6 +41,7 @@ Remplir `.env.local` :
 | `GOOGLE_CLIENT_SECRET` | OAuth Google |
 | `DISCORD_CLIENT_ID` | OAuth Discord (discord.com/developers) |
 | `DISCORD_CLIENT_SECRET` | OAuth Discord |
+| `CRON_SECRET` | Jeton Bearer exigé par `/api/cron/notify` (obligatoire en production : sans lui, le cron répond 500) |
 
 ### 3. Base de données
 

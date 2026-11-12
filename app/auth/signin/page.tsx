@@ -8,12 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { safeCallbackUrl } from "@/lib/safe-redirect";
 
 const AUTH_ERRORS: Record<string, string> = {
   DiscordEmailUnverified:
     "Votre compte Discord n'a pas d'email vérifié. Vérifiez votre email dans les paramètres Discord puis réessayez.",
   OAuthAccountNotLinked:
     "Un compte existe déjà avec cet email. Connectez-vous avec votre méthode habituelle, puis liez Discord depuis le tableau de bord.",
+  OAuthEmailUnverified:
+    "Le fournisseur n'a pas confirmé votre adresse email. Vérifiez-la puis réessayez.",
   OAuthCallbackError:
     "Discord a refusé la connexion. Vérifiez l'URI de redirection Discord et réessayez.",
   AccessDenied: "Connexion refusée.",
@@ -23,7 +26,8 @@ const AUTH_ERRORS: Record<string, string> = {
 
 function SignInForm() {
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
+  // Never trust the query string: only same-origin absolute paths survive.
+  const callbackUrl = safeCallbackUrl(searchParams.get("callbackUrl"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const authError = searchParams.get("error");

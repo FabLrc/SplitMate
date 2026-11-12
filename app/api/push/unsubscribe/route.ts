@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { logServerError } from "@/lib/log";
 
 const unsubscribeSchema = z.object({
   endpoint: z.string().url(),
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: "Donnees invalides." }, { status: 400 });
     }
-    console.error("Push unsubscribe error:", error);
+    logServerError("push-unsubscribe", error);
     return NextResponse.json({ error: "Erreur serveur." }, { status: 500 });
   }
 }

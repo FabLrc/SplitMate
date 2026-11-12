@@ -1,7 +1,6 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
 import { JoinClient } from "./join-client";
 
 export default async function JoinHouseholdPage({
@@ -38,39 +37,23 @@ export default async function JoinHouseholdPage({
     );
   }
 
-  if (session?.user?.id) {
-    const alreadyMember = household.members.some(
-      (m) => m.userId === session.user!.id
-    );
-    if (alreadyMember) {
-      redirect(`/households/${household.id}`);
-    }
+  const userId = session?.user?.id;
+  const alreadyMember = Boolean(
+    userId && household.members.some((member) => member.userId === userId)
+  );
 
-    await prisma.householdMember.upsert({
-      where: {
-        householdId_userId: {
-          householdId: household.id,
-          userId: session.user.id,
-        },
-      },
-      create: {
-        householdId: household.id,
-        userId: session.user.id,
-        role: "MEMBER",
-      },
-      update: {},
-    });
-
-    revalidatePath("/households");
-    revalidatePath("/dashboard");
+  if (userId && alreadyMember) {
     redirect(`/households/${household.id}`);
   }
 
+  // No mutation on GET: membership is only created by the explicit POST from
+  // the client, so a cross-site navigation cannot enrol the visitor.
   return (
     <JoinClient
       householdName={household.name}
       inviterName={household.createdBy.name ?? "Quelqu'un"}
       shareCode={code}
+      authenticated={Boolean(userId)}
     />
   );
 }
