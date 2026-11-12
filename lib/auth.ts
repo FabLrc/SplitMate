@@ -18,6 +18,11 @@ const providers: Provider[] = [
     clientId: process.env.DISCORD_CLIENT_ID!,
     clientSecret: process.env.DISCORD_CLIENT_SECRET!,
     checks: ["state"],
+    // Discord returns iss=https://discord.com in the OAuth callback. Auth.js
+    // validates it against the provider issuer and falls back to
+    // https://authjs.dev when unset, which makes every login fail with
+    // OAUTH_INVALID_RESPONSE.
+    issuer: "https://discord.com",
     // Only for Discord: both Discord and Google verify the email, so an
     // OAuth-only account can safely be matched by email. The signIn callback
     // below neutralizes automatic linking for password accounts.
